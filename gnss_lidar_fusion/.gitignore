@@ -1,0 +1,24 @@
+# Python virtual environment
+venv/
+*.py[cod]
+__pycache__/
+
+# IDEs
+.vscode/
+.idea/
+
+# Output folders
+data/output/
+
+# Large files
+*.so
+*.dll
+*.dylib
+*.pkl
+*.h5
+*.ply
+
+# Misc
+*.log
+*.tmp
+
