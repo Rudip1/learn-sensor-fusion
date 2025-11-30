@@ -8,7 +8,7 @@ __pycache__/
 .idea/
 
 # Output folders
-data/output/
+#data/output/
 
 # Large files
 *.so
