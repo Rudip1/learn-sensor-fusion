@@ -1,0 +1,37 @@
+# build products
+build/
+_skbuild/
+dist/
+*.egg-info/
+*.so
+*.pyd
+*.o
+*.a
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+
+# notebooks
+.ipynb_checkpoints/
+
+# data that is downloaded, never committed (tools/get_data.sh)
+data/nuscenes/
+data/downloads/
+
+# editors and OS
+.vscode/
+.idea/
+*.swp
+*.asv
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# archives of code or data
+*.zip
+*.tar.gz
+*.tgz

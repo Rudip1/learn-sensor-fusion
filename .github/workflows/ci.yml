@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-test-notebooks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libeigen3-dev ninja-build libegl1 libgl1 libgomp1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build C++ library, examples and tests
+        run: make build
+
+      - name: C++ tests
+        run: make test
+
+      - name: Install the Python module
+        run: python -m pip install -e ".[notebooks,reference]"
+
+      - name: Exercise notebooks are in sync with the solutions
+        run: make check-exercises
+
+      - name: Execute every solution notebook
+        run: python tools/run_notebooks.py

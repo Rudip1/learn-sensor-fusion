@@ -1,0 +1,32 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "sensor_fusion"
+version = "0.1.0"
+description = "GNSS, LiDAR and their fusion for vehicle localization and mapping: theory, C++ and notebooks"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "matplotlib>=3.7"]
+
+[project.optional-dependencies]
+notebooks = ["jupyter", "nbclient>=0.10", "nbformat>=5.9", "ipykernel", "scipy", "pyproj>=3.6", "scikit-learn"]
+reference = ["open3d>=0.18"]
+
+[project.urls]
+Homepage = "https://github.com/Rudip1/learn-sensor-fusion"
+
+[tool.scikit-build]
+minimum-version = "0.10"
+cmake.version = ">=3.20"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["python/sensor_fusion"]
+wheel.exclude = ["sensor_fusion/bindings/**"]
+sdist.exclude = ["build", "2_notebooks", "1_theory/figures"]
+
+[tool.scikit-build.cmake.define]
+SF_BUILD_TESTS = "OFF"
+SF_BUILD_EXAMPLES = "OFF"
+SF_BUILD_PYTHON = "ON"
