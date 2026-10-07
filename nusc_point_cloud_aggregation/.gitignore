@@ -1,0 +1,36 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+env/
+nusc_pc/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Editor files
+.vscode/
+*.swp
+*.sublime-project
+*.sublime-workspace
+
+# Data files (optional, add if large)]
+*.png
+*.jpg
+*.pcd
+*.bin
+*.npy
+*.npz
+*.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
