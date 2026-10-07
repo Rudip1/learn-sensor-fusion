@@ -104,5 +104,4 @@ Each chapter in `docs/CHAPTER_PLAN.md` produces four things with the same number
 
 ## Commits
 
-Small commits with plain messages describing the change. No AI attribution, no `Co-Authored-By` lines. Work on a
-branch and open a pull request.
+Small commits with plain messages that describe the change. Work on a branch and open a pull request.
