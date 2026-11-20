@@ -1,8 +1,8 @@
 # Chapter plan — learn-sensor-fusion   (`<pkg>` = `sensor_fusion`)
 
-GNSS, LiDAR and their fusion for vehicle localization and mapping. Existing material: `gnss_nmea_decoding/`,
-`gnss_lidar_fusion/`, `nusc_point_cloud_aggregation/` (move what is worth keeping into the standard layout; the
-nuScenes dataset is downloaded by `tools/get_data.sh`, never committed).
+GNSS, LiDAR and their fusion for vehicle localization and mapping. The original coursework (GNSS-LiDAR
+fusion, nuScenes point-cloud aggregation) is kept at tag `coursework-original`; chapters 4-8 rebuild it in the
+standard layout. The nuScenes dataset is never committed: chapter 7 adds a download script for it.
 
 1. GNSS fundamentals: how a fix is computed, NMEA 0183 sentences, parsing (C++ parser with tests).
 2. Coordinate frames: WGS-84, ECEF, ENU, UTM; conversions with round-trip tests.
