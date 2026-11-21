@@ -573,7 +573,109 @@ def chapter6() -> None:
     save(fig, "06_fusion.png")
 
 
-CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5, 6: chapter6}
+def mapping_drive():
+    """The chapter 7 drive: 16-beam LiDAR scans every 0.5 s along the lane, the true poses, and the scans' labels."""
+    from sensor_fusion import mapping, scenarios as sc, sim
+
+    t, truth = sc.lane_drive()
+    T_vl = np.eye(4)
+    T_vl[:3, 3] = [0, 0, 1.8]
+    model = sim.LidarModel.spinning(16, -15.0, 15.0, 720, 60.0)
+    model.range_noise = 0.02
+    idx = np.arange(0, len(t), 5)
+    scans = [sim.simulate_lidar(sim.demo_scene(), mapping.sensor_pose(truth[k], T_vl), model, int(k)) for k in idx]
+    return t, truth, T_vl, idx, scans
+
+
+def label_accuracy(points, labels, images, poses, cam, colors):
+    """Fraction of coloured points whose own label equals the label of the pixel that coloured them."""
+    from sensor_fusion import mapping
+
+    cam_idx = np.array(colors["camera"])
+    ok = n = 0
+    for k, img in enumerate(images):
+        sel = np.flatnonzero(cam_idx == k)
+        if len(sel) == 0:
+            continue
+        uv = mapping.project(points[sel], poses[k], cam)["pixels"].astype(int)
+        ok += np.sum(img["label"][uv[:, 1], uv[:, 0]] == labels[sel])
+        n += len(sel)
+    return n / len(points), ok / max(n, 1)
+
+
+def chapter7() -> None:
+    from sensor_fusion import fusion, mapping, scenarios as sc, sim
+
+    print("chapter 7")
+    t, truth, T_vl, idx, scans = mapping_drive()
+    pts = [s["points"] for s in scans]
+    print(f"  drive {np.sum(np.linalg.norm(np.diff(truth[:, :2], axis=0), axis=1)):.0f} m, {len(scans)} scans, {sum(len(p) for p in pts)} points")
+    true_map = mapping.aggregate(pts, [mapping.sensor_pose(truth[k], T_vl) for k in idx])["points"]
+    noise = fusion.OdometryNoise()
+    odo = sc.drifting_odometry(truth, noise, 0.01, rng=1)
+    tg, zg, _ = sc.gnss_fixes(t, truth, 1.0, 1.5, rng=2)
+    fused = fusion.fuse(list(t), odo, list(tg), zg, np.full((len(tg), 2), 2.25), truth[0],
+                        np.diag([1, 1, np.radians(5) ** 2]), noise)["x"]
+    gx, gy = np.interp(t, tg, zg[:, 0]), np.interp(t, tg, zg[:, 1])
+    gnss_only = np.c_[gx, gy, np.unwrap(np.arctan2(np.gradient(gy), np.gradient(gx)))]
+    fig, ax = figure(1, 3, width=13.5, height=4.2)
+    for i, (name, pose) in enumerate((("odometry", odo), ("fused", fused), ("GNSS only", gnss_only))):
+        M = mapping.aggregate(pts, [mapping.sensor_pose(pose[k], T_vl) for k in idx])["points"]
+        d = np.linalg.norm(M - true_map, axis=1)
+        pe = np.linalg.norm(pose[idx, :2] - truth[idx, :2], axis=1)
+        he = np.degrees(np.abs([fusion.wrap_angle(a) for a in pose[idx, 2] - truth[idx, 2]]))
+        print(f"  {name:9s}: pose error RMS {np.sqrt(np.mean(pe**2)):.2f} m, heading {np.sqrt(np.mean(he**2)):.2f} deg; "
+              f"map points displaced by {np.sqrt(np.mean(d**2)):.2f} m RMS, 95 % below {np.percentile(d, 95):.2f} m")
+        x = np.sort(d)
+        ax[2].plot(x, np.linspace(0, 1, len(x)), color=SERIES[i], label=name)
+    ax[2].set_xscale("log")
+    ax[2].set_xlim(0.01, 50)
+    ax[2].set_xlabel("displacement of a map point [m]")
+    ax[2].set_ylabel("fraction of points")
+    ax[2].set_title("map error from pose error")
+    ax[2].legend()
+    # colouring with the true poses
+    labels = np.concatenate([s["labels"] for s in scans])
+    sub = np.random.default_rng(0).choice(len(true_map), 60000, replace=False)
+    P, L = true_map[sub], labels[sub]
+    cam = sim.Camera(np.array([[300.0, 0, 200], [0, 300, 150], [0, 0, 1]]), 400, 300)
+    cams = np.arange(0, len(t), 25)
+    Tc = [mapping.sensor_pose(truth[k], sc.forward_camera_mount()) for k in cams]
+    images = [sim.render_camera(sim.demo_scene(), T, cam) for T in Tc]
+    for occ in (False, True):
+        c = mapping.colorize(P, [im["rgb"] for im in images], Tc, cam, occ)
+        frac, acc = label_accuracy(P, L, images, Tc, cam, c)
+        print(f"  colouring, occlusion test {'on ' if occ else 'off'}: {frac:.0%} of points coloured, {acc:.1%} from the right surface")
+    for err in (0.5, 1.0, 2.0):
+        Tbad = [mapping.sensor_pose(truth[k], sc.forward_camera_mount(yaw_error_deg=err)) for k in cams]
+        imb = [sim.render_camera(sim.demo_scene(), T, cam) for T in Tbad]
+        cb = mapping.colorize(P, [im["rgb"] for im in imb], Tc, cam, True)
+        print(f"  camera yaw miscalibrated by {err} deg: {label_accuracy(P, L, imb, Tc, cam, cb)[1]:.1%} from the right surface")
+    col = np.array(c["rgb"])
+    seen = np.array(c["camera"]) >= 0
+    ax[0].scatter(P[~seen, 0], P[~seen, 1], s=0.2, color="0.85")
+    ax[0].scatter(P[seen, 0], P[seen, 1], s=0.4, c=np.clip(col[seen], 0, 1))
+    ax[0].plot(truth[:, 0], truth[:, 1], "k", lw=1)
+    ax[0].set_aspect("equal")
+    ax[0].set_xlim(-35, 35)
+    ax[0].set_ylim(-22, 22)
+    ax[0].set_title(f"map coloured from {len(cams)} camera images")
+    ax[0].set_xlabel("x [m]")
+    ax[0].set_ylabel("y [m]")
+    # one image with one scan projected
+    k = 4
+    img = images[k]
+    sel = np.flatnonzero(np.isin(np.arange(len(true_map)), np.flatnonzero(np.repeat(np.arange(len(scans)), [len(p) for p in pts]) == cams[k] // 5)))
+    pr = mapping.project(true_map[sel], Tc[k], cam)
+    ins = np.array(pr["inside"])
+    ax[1].imshow(np.clip(img["rgb"], 0, 1))
+    ax[1].scatter(pr["pixels"][ins, 0], pr["pixels"][ins, 1], s=0.3, c=np.minimum(pr["depth"][ins], 40), cmap="turbo")
+    ax[1].set_axis_off()
+    ax[1].set_title("one scan projected into the camera (colour = depth)")
+    save(fig, "07_map_building.png")
+
+
+CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5, 6: chapter6, 7: chapter7}
 
 if __name__ == "__main__":
     wanted = [int(a) for a in sys.argv[1:]] or sorted(CHAPTERS)

@@ -35,3 +35,4 @@ desktop.ini
 *.zip
 *.tar.gz
 *.tgz
+data/external/

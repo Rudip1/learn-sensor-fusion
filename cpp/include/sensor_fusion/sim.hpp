@@ -64,4 +64,25 @@ struct LidarScan {
 LidarScan simulate_lidar(const Scene& scene, const Eigen::Isometry3d& T_world_sensor, const LidarModel& model,
                          std::uint32_t seed = 0);
 
+/// Pinhole camera: intrinsics K (camera frame x right, y down, z forward) and image size.
+struct Camera {
+    Eigen::Matrix3d K = Eigen::Matrix3d::Identity();
+    int width = 320;
+    int height = 240;
+};
+
+/// A rendered image: colour (RGB in [0, 1]), depth along the optical axis [m] (infinity for the sky) and the
+/// label of the surface seen at every pixel (box id, -1 ground, -2 sky). Row-major, index = v * width + u.
+struct RgbImage {
+    int width = 0;
+    int height = 0;
+    Eigen::Matrix<float, 3, Eigen::Dynamic> rgb;
+    Eigen::VectorXf depth;
+    Eigen::VectorXi label;
+};
+
+/// Ray-cast the scene through every pixel centre of a camera at T_world_camera (eq. 7.2 in reverse). Surfaces
+/// are shaded by 0.5 + 0.5 |n . d| and the ground carries a checkerboard of edge scene.ground_checker.
+RgbImage render_camera(const Scene& scene, const Eigen::Isometry3d& T_world_camera, const Camera& camera);
+
 }  // namespace sensor_fusion::sim

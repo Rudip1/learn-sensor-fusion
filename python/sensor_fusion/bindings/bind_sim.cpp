@@ -1,5 +1,7 @@
 #include <pybind11/stl.h>
 
+#include <pybind11/numpy.h>
+
 #include "bindings.hpp"
 #include "sensor_fusion/sim.hpp"
 
@@ -73,6 +75,34 @@ void bind_sim(py::module_ m) {
         },
         py::arg("scene"), py::arg("T_world_sensor"), py::arg("model"), py::arg("seed") = 0,
         "one revolution; returns {'points': (n,3) sensor frame, 'labels': (n,), 'normals': (n,3)}");
+
+    py::class_<Camera>(m, "Camera")
+        .def(py::init([](const Eigen::Matrix3d& K, int w, int h) {
+                 Camera c;
+                 c.K = K, c.width = w, c.height = h;
+                 return c;
+             }),
+             py::arg("K"), py::arg("width") = 320, py::arg("height") = 240)
+        .def_readwrite("K", &Camera::K)
+        .def_readwrite("width", &Camera::width)
+        .def_readwrite("height", &Camera::height);
+    m.def(
+        "render_camera",
+        [](const Scene& scene, const Eigen::Matrix4d& T_world_camera, const Camera& cam) {
+            const RgbImage img = render_camera(scene, to_isometry(T_world_camera), cam);
+            py::dict out;
+            Eigen::Matrix<float, Eigen::Dynamic, 3, Eigen::RowMajor> rgb = img.rgb.transpose();
+            out["rgb"] = py::array_t<float>({img.height, img.width, 3}, rgb.data());
+            Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> depth =
+                Eigen::Map<const Eigen::Matrix<float, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(img.depth.data(), img.height, img.width);
+            out["depth"] = depth;
+            Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor> label =
+                Eigen::Map<const Eigen::Matrix<int, Eigen::Dynamic, Eigen::Dynamic, Eigen::RowMajor>>(img.label.data(), img.height, img.width);
+            out["label"] = label;
+            return out;
+        },
+        py::arg("scene"), py::arg("T_world_camera"), py::arg("camera"),
+        "ray-cast image; returns {'rgb': (h,w,3), 'depth': (h,w), 'label': (h,w)}");
 }
 
 }  // namespace sensor_fusion::python

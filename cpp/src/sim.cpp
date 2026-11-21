@@ -144,4 +144,46 @@ LidarScan simulate_lidar(const Scene& scene, const Eigen::Isometry3d& T_world_se
     return scan;
 }
 
+RgbImage render_camera(const Scene& scene, const Eigen::Isometry3d& T_world_camera, const Camera& cam) {
+    RgbImage img;
+    img.width = cam.width;
+    img.height = cam.height;
+    const Eigen::Index n = Eigen::Index(cam.width) * cam.height;
+    img.rgb.resize(3, n);
+    img.depth.resize(n);
+    img.label.resize(n);
+    const Eigen::Matrix3d Kinv = cam.K.inverse();
+    const Eigen::Matrix3d R = T_world_camera.linear();
+    const Eigen::Vector3d o = T_world_camera.translation();
+    const Eigen::Vector3f sky(0.70f, 0.80f, 0.95f);
+    for (int v = 0; v < cam.height; ++v)
+        for (int u = 0; u < cam.width; ++u) {
+            const Eigen::Index i = Eigen::Index(v) * cam.width + u;
+            const Eigen::Vector3d dc = Kinv * Eigen::Vector3d(u + 0.5, v + 0.5, 1.0);  // pixel centre, z = 1
+            const Eigen::Vector3d dw = (R * dc).normalized();
+            const Hit h = cast_ray(scene, o, dw, 1e-6, 1e4);
+            img.label(i) = h.label;
+            if (h.label == -2) {
+                img.rgb.col(i) = sky;
+                img.depth(i) = std::numeric_limits<float>::infinity();
+                continue;
+            }
+            img.depth(i) = float(h.range / dc.norm());  // depth = z in the camera frame
+            Eigen::Vector3d c = scene.ground_color;
+            if (h.label == -1) {
+                if (scene.ground_checker > 0) {
+                    const Eigen::Vector3d p = o + h.range * dw;
+                    const long a = long(std::floor(p.x() / scene.ground_checker)) + long(std::floor(p.y() / scene.ground_checker));
+                    if (a % 2 != 0) c *= 0.7;
+                }
+            } else {
+                for (const Box& b : scene.boxes)
+                    if (b.id == h.label) c = b.color;
+            }
+            const double shade = 0.5 + 0.5 * std::abs(h.normal.dot(dw));
+            img.rgb.col(i) = (shade * c).cast<float>();
+        }
+    return img;
+}
+
 }  // namespace sensor_fusion::sim

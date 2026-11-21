@@ -64,3 +64,24 @@ def gnss_fixes(times: np.ndarray, truth: np.ndarray, rate: float = 1.0, sigma: f
     ang = rng.uniform(0, 2 * np.pi, out.sum())
     e[out] += outlier_size * np.c_[np.cos(ang), np.sin(ang)]
     return t, xy + e, out
+
+
+def lane_drive(duration: float = 25.0, speed: float = 2.0, odom_rate: float = 10.0):
+    """True poses (x, y, yaw) of a slow drive along the lane of sim.demo_scene(), from x = -25 m eastwards with a
+    gentle 0.8 m sway. Returns (times, poses (n, 3))."""
+    t = np.arange(0.0, duration + 1e-9, 1.0 / odom_rate)
+    x = -25.0 + speed * t
+    y = 0.8 * np.sin(x / 10)
+    yaw = np.arctan(0.08 * np.cos(x / 10))
+    return t, np.c_[x, y, yaw]
+
+
+def forward_camera_mount(x: float = 0.5, height: float = 1.5, yaw_error_deg: float = 0.0) -> np.ndarray:
+    """T_vehicle_camera of a camera looking along the vehicle's x axis (camera z forward, x right, y down),
+    optionally rotated by a yaw (calibration) error."""
+    a = np.radians(yaw_error_deg)
+    Rz = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0], [0, 0, 1]])
+    T = np.eye(4)
+    T[:3, :3] = Rz @ np.column_stack([(0, -1, 0), (0, 0, -1), (1, 0, 0)])
+    T[:3, 3] = [x, 0, height]
+    return T
