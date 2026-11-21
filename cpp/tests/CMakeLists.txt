@@ -13,6 +13,7 @@ add_executable(sensor_fusion_tests
     test_geodesy.cpp
     test_gnss_quality.cpp
     test_cloud.cpp
+    test_registration.cpp
 )
 target_link_libraries(sensor_fusion_tests PRIVATE sensor_fusion::sensor_fusion Catch2::Catch2WithMain)
 target_compile_definitions(sensor_fusion_tests PRIVATE SF_DATA_DIR="${PROJECT_SOURCE_DIR}/data")

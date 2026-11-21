@@ -10,4 +10,5 @@ PYBIND11_MODULE(_core, m) {
     sensor_fusion::python::bind_geo(m.def_submodule("geo", "WGS-84, ECEF, ENU and UTM (chapter 2)"));
     sensor_fusion::python::bind_cloud(m.def_submodule("cloud", "PCD files, k-d tree, voxel grid, normals (chapter 4)"));
     sensor_fusion::python::bind_sim(m.def_submodule("sim", "synthetic scene, ray-cast LiDAR and camera"));
+    sensor_fusion::python::bind_reg(m.def_submodule("reg", "registration: ICP and LiDAR odometry (chapter 5)"));
 }

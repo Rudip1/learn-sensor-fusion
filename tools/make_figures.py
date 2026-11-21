@@ -355,7 +355,133 @@ def chapter4() -> None:
     save(fig, "04_point_clouds.png")
 
 
-CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4}
+def pose3(x, y, yaw, z):
+    c, s = np.cos(yaw), np.sin(yaw)
+    T = np.eye(4)
+    T[:3, :3] = [[c, -s, 0], [s, c, 0], [0, 0, 1]]
+    T[:3, 3] = [x, y, z]
+    return T
+
+
+def h2(x, y, a):
+    c, s = np.cos(a), np.sin(a)
+    return np.array([[c, -s, x], [s, c, y], [0, 0, 1.0]])
+
+
+def planar_scans(poses2d, noise=0.01):
+    """Planar scans (n, 2) of the demo scene from 2-D poses (x, y, yaw), scanner 1 m above the ground."""
+    from sensor_fusion import sim
+
+    model = sim.LidarModel.planar(720, 30.0)
+    model.range_noise = noise
+    scene = sim.demo_scene()
+    return [sim.simulate_lidar(scene, pose3(x, y, a, 1.0), model, i)["points"][:, :2] for i, (x, y, a) in enumerate(poses2d)]
+
+
+def recorded_scans():
+    from sensor_fusion import cloud
+
+    d = cloud.read_pcd(str(sf.data.path("parking_lot/run1_scans.pcd")))
+    n = int(d["scan"].max()) + 1
+    return [np.c_[d["x"][d["scan"] == k], d["y"][d["scan"] == k]] for k in range(n)]
+
+
+def gnss_in_scan_window():
+    """ENU positions (east, north) and times of the run-1 fixes during the recorded scans."""
+    f = sf.io.load_navsatfix("parking_lot/run1_fix.csv")
+    st = np.loadtxt(sf.data.path("parking_lot/run1_scans.csv"), delimiter=",", skiprows=1)
+    ts, tf = st[:, 1] * 1e-9, f["stamp_ns"] * 1e-9
+    ltp = geo.LocalTangentPlane(f["lat"][0], f["lon"][0], f["alt"][0])
+    enu = ltp.geodetic_to_enu(f["lat"], f["lon"], f["alt"])
+    w = (tf >= ts[0]) & (tf <= ts[-1])
+    return ts, tf[w], enu[w, :2]
+
+
+def chapter5() -> None:
+    from sensor_fusion import reg, sim
+
+    print("chapter 5")
+    fig, ax = figure(1, 3, width=13.5, height=4.0)
+    # (a) 3-D scan pair: convergence of the two metrics
+    model = sim.LidarModel.spinning(32, -25.0, 10.0, 1024)
+    model.range_noise = 0.01
+    scene = sim.demo_scene()
+    TA, TB = pose3(0, 0, 0, 1.8), pose3(1.0, 0.3, 0.05, 1.8)
+    a, b = sim.simulate_lidar(scene, TA, model, 1), sim.simulate_lidar(scene, TB, model, 2)
+    truth = np.linalg.inv(TA) @ TB
+    for i, metric in enumerate(("point_to_point", "point_to_plane")):
+        r = reg.icp(b["points"], a["points"], None, metric, 100, 2.0)
+        E = np.linalg.inv(truth) @ r["T"]
+        print(f"  3-D {metric}: {r['iterations']} iterations, error {np.linalg.norm(E[:3, 3]):.3f} m")
+        ax[0].semilogy(np.arange(1, len(r["history"]) + 1), r["history"], color=SERIES[i],
+                       label=f"{metric.replace('_', '-')}: {100 * np.linalg.norm(E[:3, 3]):.1f} cm off")
+        objects = reg.icp(b["points"][b["labels"] >= 0], a["points"][a["labels"] >= 0], None, metric, 100, 2.0)
+        E = np.linalg.inv(truth) @ objects["T"]
+        print(f"  3-D {metric} without ground: error {np.linalg.norm(E[:3, 3]):.3f} m")
+    ax[0].set_xlabel("iteration")
+    ax[0].set_ylabel("RMS residual [m]")
+    ax[0].set_title("ICP on two 32-beam scans (1.04 m apart)")
+    ax[0].legend()
+    # basin of convergence, 2-D
+    A, B = planar_scans([(0, 0, 0), (0.5, 0.1, 0.03)])
+    T2 = h2(0.5, 0.1, 0.03)
+    rng = np.random.default_rng(0)
+    for metric in ("point_to_point", "point_to_plane"):
+        rates = []
+        for off, yaw in ((1.0, 10), (2.0, 20), (3.0, 30)):
+            ok = 0
+            for _ in range(50):
+                d = rng.normal(size=2)
+                d *= off / np.linalg.norm(d)
+                E = np.linalg.inv(T2) @ reg.icp(B, A, T2 @ h2(d[0], d[1], np.radians(yaw) * rng.choice([-1, 1])), metric, 100, 2.0)["T"]
+                ok += np.linalg.norm(E[:2, 2]) < 0.05 and abs(np.arctan2(E[1, 0], E[0, 0])) < np.radians(0.5)
+            rates.append(ok / 50)
+        print(f"  basin {metric}: success from 1 m/10, 2 m/20, 3 m/30 deg: {rates}")
+    # (b) simulated drive
+    xs = np.linspace(-20, 20, 101)
+    ys = 1.5 * np.sin(xs / 8)
+    yaw = np.arctan(1.5 / 8 * np.cos(xs / 8))
+    scans = planar_scans(zip(xs, ys, yaw))
+    length = np.sum(np.hypot(np.diff(xs), np.diff(ys)))
+    T0 = np.linalg.inv(h2(xs[0], ys[0], yaw[0]))
+    rel = np.array([(T0 @ h2(x, y, a))[:2, 2] for x, y, a in zip(xs, ys, yaw)])
+    ax[1].plot(rel[:, 0], rel[:, 1], "k", lw=2.5, label="truth")
+    for i, metric in enumerate(("point_to_point", "point_to_plane")):
+        r = reg.lidar_odometry(scans, metric, 50, 1.0)
+        p = np.array([T[:2, 2] for T in r["poses"]])
+        e = np.linalg.norm(p[-1] - rel[-1])
+        print(f"  drive {length:.1f} m, {metric}: end error {e:.3f} m ({100 * e / length:.2f} %)")
+        ax[1].plot(p[:, 0], p[:, 1], color=SERIES[i], label=f"{metric.replace('_', '-')}: {100 * e / length:.2f} % drift")
+    ax[1].set_ylim(-4, 12)
+    ax[1].set_xlabel("x [m]")
+    ax[1].set_ylabel("y [m]")
+    ax[1].set_title("odometry on a simulated 40 m drive")
+    ax[1].legend(loc="upper left")
+    # (c) recorded scans against GNSS
+    real = recorded_scans()
+    ts, tf, en = gnss_in_scan_window()
+    ax[2].plot(en[:, 0] - en[0, 0], en[:, 1] - en[0, 1], ".", ms=3, color="0.5", label="GNSS fixes")
+    for i, gate in enumerate((0.3, 0.5, 1.0)):
+        r = reg.lidar_odometry(real, "point_to_plane", 50, gate)
+        p = np.array([T[:2, 2] for T in r["poses"]])
+        # odometry at the fix times, aligned rigidly to the fixes (the scanner's heading in ENU is unknown here)
+        q = np.c_[np.interp(tf, ts, p[:, 0]), np.interp(tf, ts, p[:, 1])]
+        A_ = reg.best_rigid(q, en)
+        al = q @ A_[:2, :2].T + A_[:2, 2]
+        rms = np.sqrt(np.mean(np.sum((al - en) ** 2, axis=1)))
+        print(f"  recorded, gate {gate} m: net {np.linalg.norm(p[-1]):.1f} m, RMS to GNSS after alignment {rms:.2f} m")
+        ax[2].plot(al[:, 0] - en[0, 0], al[:, 1] - en[0, 1], color=SERIES[i], label=f"gate {gate} m: RMS {rms:.1f} m")
+    print(f"  GNSS: {len(en)} fixes, net {np.linalg.norm(en[-1] - en[0]):.1f} m")
+    ax[2].set_xlim(-20, 20)
+    ax[2].set_ylim(-36, 4)
+    ax[2].set_xlabel("east [m]")
+    ax[2].set_ylabel("north [m]")
+    ax[2].set_title("recorded scans (61 s) against GNSS")
+    ax[2].legend(fontsize=8, loc="upper left")
+    save(fig, "05_registration.png")
+
+
+CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5}
 
 if __name__ == "__main__":
     wanted = [int(a) for a in sys.argv[1:]] or sorted(CHAPTERS)

@@ -19,6 +19,7 @@ void bind_gnss(py::module_ m);
 void bind_geo(py::module_ m);
 void bind_cloud(py::module_ m);
 void bind_sim(py::module_ m);
+void bind_reg(py::module_ m);
 
 /// 4x4 homogeneous matrix -> isometry (rotation part assumed orthonormal).
 Eigen::Isometry3d to_isometry(const Eigen::Matrix4d& T);
