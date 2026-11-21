@@ -9,4 +9,4 @@ Chapters follow `docs/CHAPTER_PLAN.md`; each finished chapter has its theory tex
 - [x] 05 Registration
 - [x] 06 Loosely coupled GNSS + LiDAR fusion
 - [x] 07 Map building
-- [ ] 08 Dynamic objects
+- [x] 08 Dynamic objects

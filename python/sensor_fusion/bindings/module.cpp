@@ -13,4 +13,5 @@ PYBIND11_MODULE(_core, m) {
     sensor_fusion::python::bind_reg(m.def_submodule("reg", "registration: ICP and LiDAR odometry (chapter 5)"));
     sensor_fusion::python::bind_fusion(m.def_submodule("fusion", "GNSS + odometry EKF (chapter 6)"));
     sensor_fusion::python::bind_mapping(m.def_submodule("mapping", "aggregation, projection, colouring (chapter 7)"));
+    sensor_fusion::python::bind_objects(m.def_submodule("objects", "ground removal, DBSCAN, dynamic objects (chapter 8)"));
 }

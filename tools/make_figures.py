@@ -675,7 +675,89 @@ def chapter7() -> None:
     save(fig, "07_map_building.png")
 
 
-CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5, 6: chapter6, 7: chapter7}
+def detect_dynamic(drive, eps=0.5, min_points=3, voxel=0.5, ratio=0.3):
+    """Chapter 8 pipeline on a scenarios.dynamic_drive(): RANSAC ground, DBSCAN of the rest, persistence filter.
+    Returns per scan: world points, ground mask, cluster labels, dynamic mask, true mover mask."""
+    from sensor_fusion import objects, scenarios as sc
+
+    world, ground, labels = [], [], []
+    for k, s in enumerate(drive):
+        p, T = s["points"], s["T_world_sensor"]
+        g = np.array(objects.segment_ground(p, 0.15, 500, 15.0, k)["ground"])
+        lab = np.full(len(p), -1)
+        lab[~g] = objects.dbscan(p[~g], eps, min_points)
+        world.append(p @ T[:3, :3].T + T[:3, 3])
+        ground.append(g)
+        labels.append(lab)
+    dyn = objects.dynamic_points(world, [l.tolist() for l in labels], voxel, ratio)
+    movers = [np.isin(s["labels"], sc.MOVER_IDS) for s in drive]
+    return world, ground, labels, [np.array(d) for d in dyn], movers
+
+
+def chapter8() -> None:
+    from sensor_fusion import objects, scenarios as sc
+
+    print("chapter 8")
+    for pitch in (0.0, 3.0):
+        s = sc.dynamic_drive(0.0, 0.1, pitch_deg=pitch)[0]
+        truth = s["labels"] == -1
+        r = np.array(objects.segment_ground(s["points"])["ground"])
+        h = np.array(objects.ground_by_height(s["points"], -1.8 + 0.15))
+        print(f"  pitch {pitch} deg: RANSAC ground correct {np.mean(r == truth):.3f}, height threshold {np.mean(h == truth):.3f} "
+              f"({np.sum(truth & ~h)} ground points missed)")
+    fig, ax = figure(1, 3, width=13.5, height=4.2)
+    results = {}
+    for speed in (0.0, 2.0):
+        drive = sc.dynamic_drive(speed)
+        world, ground, labels, dyn, movers = detect_dynamic(drive)
+        D, M = np.concatenate(dyn), np.concatenate(movers)
+        tp = np.sum(D & M)
+        G, L = np.concatenate(ground), np.concatenate(labels)
+        print(f"  ego {speed} m/s: precision {tp / D.sum():.2f}, recall {tp / M.sum():.2f} ({M.sum()} mover points; "
+              f"missed: {np.sum(M & G)} as ground, {np.sum(M & ~G & (L < 0))} as DBSCAN noise, {np.sum(M & ~D & (L >= 0))} in static clusters)")
+        results[speed] = (world, ground, labels, dyn, movers)
+    world, ground, labels, dyn, movers = results[0.0]
+    # (a) one scan: clusters and the dynamic ones
+    k = 15
+    W, g, lab, d = world[k], ground[k], labels[k], dyn[k]
+    ax[0].scatter(W[g, 0], W[g, 1], s=0.2, color="0.85")
+    st = (lab >= 0) & ~d
+    ax[0].scatter(W[st, 0], W[st, 1], s=0.5, c=lab[st] % 8, cmap="tab10")
+    ax[0].scatter(W[d, 0], W[d, 1], s=3, color="k", label="dynamic")
+    ax[0].scatter(W[(lab < 0) & ~g, 0], W[(lab < 0) & ~g, 1], s=0.5, color=SERIES[7], label="DBSCAN noise")
+    ax[0].plot(-10, 0, "k^", ms=8)
+    ax[0].set_aspect("equal")
+    ax[0].set_xlim(-32, 32)
+    ax[0].set_ylim(-20, 20)
+    ax[0].set_title(f"scan at t = {1.5:.1f} s: clusters, dynamic in black")
+    ax[0].legend(fontsize=7, loc="lower right")
+    # (b) aggregated 3 s: ghost trails and what the filter removes
+    allW = np.concatenate(world)
+    allG, allD, allM = np.concatenate(ground), np.concatenate(dyn), np.concatenate(movers)
+    keep = ~allG
+    ax[1].scatter(allW[keep & ~allM, 0], allW[keep & ~allM, 1], s=0.2, color="0.6", label="static")
+    ax[1].scatter(allW[allM & allD, 0], allW[allM & allD, 1], s=0.5, color=SERIES[0], label="moving, removed")
+    ax[1].scatter(allW[allM & ~allD, 0], allW[allM & ~allD, 1], s=0.5, color=SERIES[7], label="moving, kept")
+    ax[1].set_aspect("equal")
+    ax[1].set_xlim(-32, 32)
+    ax[1].set_ylim(-20, 20)
+    ax[1].set_title("3 s of scans: the trails of the movers")
+    ax[1].legend(fontsize=7, loc="lower right")
+    # (c) persistence of static and moving points
+    pers = np.concatenate(objects.persistence(world, 0.5))
+    bins = np.linspace(0, 1, 31)
+    ax[2].hist(pers[keep & ~allM], bins=bins, density=True, alpha=0.6, label="static objects")
+    ax[2].hist(pers[allM], bins=bins, density=True, alpha=0.6, label="car and pedestrian")
+    ax[2].axvline(0.3, color="k", ls="--", lw=1)
+    ax[2].set_xlabel("persistence (fraction of the 30 scans)")
+    ax[2].set_ylabel("density")
+    ax[2].set_title("persistence, ego vehicle standing")
+    ax[2].legend()
+    print(f"  persistence: static median {np.median(pers[keep & ~allM]):.2f}, movers median {np.median(pers[allM]):.2f}")
+    save(fig, "08_dynamic_objects.png")
+
+
+CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5, 6: chapter6, 7: chapter7, 8: chapter8}
 
 if __name__ == "__main__":
     wanted = [int(a) for a in sys.argv[1:]] or sorted(CHAPTERS)

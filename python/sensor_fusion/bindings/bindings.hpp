@@ -22,6 +22,7 @@ void bind_sim(py::module_ m);
 void bind_reg(py::module_ m);
 void bind_fusion(py::module_ m);
 void bind_mapping(py::module_ m);
+void bind_objects(py::module_ m);
 
 /// 4x4 homogeneous matrix -> isometry (rotation part assumed orthonormal).
 Eigen::Isometry3d to_isometry(const Eigen::Matrix4d& T);

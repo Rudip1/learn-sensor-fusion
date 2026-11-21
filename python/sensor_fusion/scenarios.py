@@ -85,3 +85,39 @@ def forward_camera_mount(x: float = 0.5, height: float = 1.5, yaw_error_deg: flo
     T[:3, :3] = Rz @ np.column_stack([(0, -1, 0), (0, 0, -1), (1, 0, 0)])
     T[:3, 3] = [x, 0, height]
     return T
+
+
+def scene_with_movers(t: float):
+    """sim.demo_scene() at time t [s] with two moving objects: a car (id 100, yellow) driving west at 5 m/s in the
+    lane next to the parked cars, and a pedestrian (id 101, magenta) crossing at 1.2 m/s."""
+    from ._core import sim
+
+    s = sim.demo_scene()
+    boxes = list(s.boxes)
+    boxes.append(sim.Box([15.0 - 5.0 * t, 2.5, 0.75], [2.25, 0.9, 0.75], 0.0, [0.9, 0.9, 0.1], 100))
+    boxes.append(sim.Box([8.0, -4.0 + 1.2 * t, 0.9], [0.3, 0.3, 0.9], 0.0, [0.9, 0.2, 0.9], 101))
+    s.boxes = boxes
+    return s
+
+
+MOVER_IDS = (100, 101)
+
+
+def dynamic_drive(ego_speed: float = 0.0, duration: float = 3.0, rate: float = 10.0, pitch_deg: float = 0.0):
+    """Scans of a 16-beam LiDAR (1.8 m above the ego vehicle, which starts at x = -10 m and drives east at
+    `ego_speed`) of scene_with_movers. With pitch_deg the sensor is tilted nose-down (braking). Returns a list of
+    dicts {t, T_world_sensor, points (sensor frame), labels}."""
+    from ._core import mapping, sim
+
+    model = sim.LidarModel.spinning(16, -15.0, 15.0, 720, 60.0)
+    model.range_noise = 0.02
+    a = np.radians(pitch_deg)
+    T_vl = np.eye(4)
+    T_vl[:3, :3] = [[np.cos(a), 0, np.sin(a)], [0, 1, 0], [-np.sin(a), 0, np.cos(a)]]
+    T_vl[:3, 3] = [0, 0, 1.8]
+    out = []
+    for k, t in enumerate(np.arange(0.0, duration - 1e-9, 1.0 / rate)):
+        T = mapping.sensor_pose(np.array([-10.0 + ego_speed * t, 0.0, 0.0]), T_vl)
+        s = sim.simulate_lidar(scene_with_movers(t), T, model, k)
+        out.append({"t": t, "T_world_sensor": T, "points": s["points"], "labels": s["labels"]})
+    return out

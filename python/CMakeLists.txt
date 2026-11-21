@@ -11,6 +11,7 @@ pybind11_add_module(_core MODULE
     sensor_fusion/bindings/bind_reg.cpp
     sensor_fusion/bindings/bind_fusion.cpp
     sensor_fusion/bindings/bind_mapping.cpp
+    sensor_fusion/bindings/bind_objects.cpp
 )
 target_link_libraries(_core PRIVATE sensor_fusion::sensor_fusion)
 install(TARGETS _core LIBRARY DESTINATION sensor_fusion)

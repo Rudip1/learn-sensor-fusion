@@ -6,13 +6,13 @@ The algorithms live in the C++ library (cpp/); this package exposes them through
 
 import sys as _sys
 
-from ._core import cloud, fusion, geo, gnss, mapping, nmea, reg, sim
+from ._core import cloud, fusion, geo, gnss, mapping, nmea, objects, reg, sim
 from . import data, io, plotting, scenarios, tables
 
 __version__ = "0.1.0"
 
 # make "import sensor_fusion.nmea" work as well as "from sensor_fusion import nmea"
-for _name in ("cloud", "fusion", "geo", "gnss", "mapping", "nmea", "reg", "sim"):
+for _name in ("cloud", "fusion", "geo", "gnss", "mapping", "nmea", "objects", "reg", "sim"):
     _sys.modules[f"{__name__}.{_name}"] = globals()[_name]
 
-__all__ = ["cloud", "data", "fusion", "geo", "gnss", "io", "mapping", "nmea", "plotting", "reg", "sim", "tables"]
+__all__ = ["cloud", "data", "fusion", "geo", "gnss", "io", "mapping", "nmea", "objects", "plotting", "reg", "sim", "tables"]
