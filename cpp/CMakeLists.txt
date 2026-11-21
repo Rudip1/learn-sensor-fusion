@@ -6,6 +6,7 @@ add_library(sensor_fusion STATIC
     src/cloud.cpp
     src/sim.cpp
     src/registration.cpp
+    src/fusion.cpp
 )
 add_library(sensor_fusion::sensor_fusion ALIAS sensor_fusion)
 target_include_directories(sensor_fusion PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

@@ -481,7 +481,99 @@ def chapter5() -> None:
     save(fig, "05_registration.png")
 
 
-CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5}
+def recorded_fusion_inputs():
+    """Odometry (chapter 5, point-to-plane, gate 0.5 m) and GNSS of the recorded 61 s, and the initial state."""
+    from sensor_fusion import reg
+
+    real = recorded_scans()
+    ts, tf, en = gnss_in_scan_window()
+    f = sf.io.load_navsatfix("parking_lot/run1_fix.csv")
+    w = np.isin(f["stamp_ns"] * 1e-9, tf)
+    var = np.c_[f["var_e"][w], f["var_n"][w]]
+    poses = reg.lidar_odometry(real, "point_to_plane", 50, 0.5)["poses"]
+    odo = np.array([[T[0, 2], T[1, 2], np.arctan2(T[1, 0], T[0, 0])] for T in poses])
+    k5 = np.argmax(np.linalg.norm(odo[:, :2], axis=1) > 5)
+    g5 = np.argmax(np.linalg.norm(en - en[0], axis=1) > 5)
+    yaw0 = np.arctan2(*(en[g5] - en[0])[::-1]) - np.arctan2(odo[k5, 1], odo[k5, 0])
+    x0 = np.array([en[0, 0], en[0, 1], np.arctan2(np.sin(yaw0), np.cos(yaw0))])
+    P0 = np.diag([var[0, 0], var[0, 1], np.radians(10) ** 2])
+    return ts, odo, tf, en, var, x0, P0
+
+
+def chapter6() -> None:
+    from sensor_fusion import fusion, scenarios as sc
+
+    print("chapter 6")
+    noise = fusion.OdometryNoise(0.02, 0.05, 0.002)
+    t, truth = sc.loop_drive(3.0)
+    length = np.sum(np.linalg.norm(np.diff(truth[:, :2], axis=0), axis=1))
+    P0 = np.diag([1.0, 1.0, np.radians(5) ** 2])
+    print(f"  loop: {length:.0f} m, {t[-1]:.0f} s, odometry 10 Hz, GNSS 1 Hz sigma 1.5 m")
+    cases = [("white GNSS", 0.0, {}), ("+ 5 % outliers", 0.0, {"outlier_fraction": 0.05}),
+             ("+ 1 % odometry scale error", 0.01, {}), ("correlated GNSS (60 s)", 0.0, {"correlation_time": 60.0})]
+    for name, scale, kw in cases:
+        for gate in (0.99, 0.0):
+            if gate == 0.0 and "outliers" not in name:
+                continue
+            st = []
+            for seed in range(10):
+                odo = sc.drifting_odometry(truth, noise, scale, rng=seed)
+                tg, zg, _ = sc.gnss_fixes(t, truth, 1.0, 1.5, rng=100 + seed, **kw)
+                tr = np.c_[np.interp(tg, t, truth[:, 0]), np.interp(tg, t, truth[:, 1])]
+                r = fusion.fuse(list(t), odo, list(tg), zg, np.full((len(tg), 2), 2.25), truth[0], P0, noise, gate)
+                e = r["x"][:, :2] - truth[:, :2]
+                acc = np.array(r["accepted"])
+                st.append([np.sqrt(np.mean(np.sum((zg - tr) ** 2, axis=1))), np.linalg.norm(odo[-1, :2] - truth[-1, :2]),
+                           np.sqrt(np.mean(np.sum(e**2, axis=1))), np.linalg.norm(e, axis=1).max(),
+                           np.mean(np.array(r["nis"])[acc]), np.sqrt(np.mean((e / r["sigma"][:, :2]) ** 2))])
+            m = np.mean(st, axis=0)
+            print(f"  {name:28s} gate {'on ' if gate else 'off'}: GNSS RMS {m[0]:.2f} m, odometry end {m[1]:.1f} m, "
+                  f"fused RMS {m[2]:.2f} m (max {m[3]:.2f}), mean NIS {m[4]:.2f}, normalized error RMS {m[5]:.2f}")
+    # one run of the outlier case for the figure
+    odo = sc.drifting_odometry(truth, noise, 0.0, rng=0)
+    tg, zg, out = sc.gnss_fixes(t, truth, 1.0, 1.5, outlier_fraction=0.05, rng=100)
+    r = fusion.fuse(list(t), odo, list(tg), zg, np.full((len(tg), 2), 2.25), truth[0], P0, noise, 0.99)
+    fig, ax = figure(1, 3, width=13.5, height=4.2)
+    ax[0].plot(zg[~out, 0], zg[~out, 1], ".", ms=2, color="0.65", label="GNSS")
+    ax[0].plot(zg[out, 0], zg[out, 1], "x", ms=5, color=SERIES[7], label="GNSS outliers")
+    ax[0].plot(odo[:, 0], odo[:, 1], color=SERIES[1], lw=1, label="odometry")
+    ax[0].plot(r["x"][:, 0], r["x"][:, 1], color=SERIES[0], lw=1.2, label="fused")
+    ax[0].plot(truth[:, 0], truth[:, 1], "k--", lw=0.8, label="truth")
+    ax[0].set_aspect("equal")
+    ax[0].set_title("3 laps, 5 % GNSS outliers")
+    ax[0].legend(fontsize=7, loc="center")
+    e = np.linalg.norm(r["x"][:, :2] - truth[:, :2], axis=1)
+    bound = 2 * np.sqrt(r["sigma"][:, 0] ** 2 + r["sigma"][:, 1] ** 2)
+    tr = np.c_[np.interp(tg, t, truth[:, 0]), np.interp(tg, t, truth[:, 1])]
+    ax[1].plot(tg, np.linalg.norm(zg - tr, axis=1), ".", ms=2, color="0.65", label="GNSS")
+    ax[1].plot(t, np.linalg.norm(odo[:, :2] - truth[:, :2], axis=1), color=SERIES[1], label="odometry")
+    ax[1].plot(t, e, color=SERIES[0], label="fused")
+    ax[1].fill_between(t, 0, bound, color=SERIES[0], alpha=0.15, label="fused 2-sigma")
+    ax[1].set_ylim(0, 8)
+    ax[1].set_xlabel("time [s]")
+    ax[1].set_ylabel("position error [m]")
+    ax[1].legend(fontsize=7, loc="upper left")
+    ax[1].set_title("errors against the truth")
+    # recorded run
+    ts, odo_r, tf, en, var, x0, P0r = recorded_fusion_inputs()
+    for scale, color in ((1.0, SERIES[2]), (0.03, SERIES[0])):
+        rr = fusion.fuse(list(ts), odo_r, list(tf), en, var, x0, P0r, noise, 0.99, scale)
+        nis = np.mean(rr["nis"])
+        print(f"  recorded: GNSS covariance x {scale}: mean NIS {nis:.2f}, accepted {np.mean(rr['accepted']):.2f}, "
+              f"final heading sigma {np.degrees(rr['sigma'][-1, 2]):.2f} deg, heading {np.degrees(rr['x'][-1, 2]):.1f} deg")
+        ax[2].plot(rr["x"][:, 0] - en[0, 0], rr["x"][:, 1] - en[0, 1], color=color, label=f"fused, R x {scale} (NIS {nis:.2f})")
+    print(f"  recorded: reported GNSS sigma {np.sqrt(var).min():.2f}-{np.sqrt(var).max():.2f} m, initial heading {np.degrees(x0[2]):.1f} deg")
+    ax[2].plot(en[:, 0] - en[0, 0], en[:, 1] - en[0, 1], ".", ms=2, color="0.6", label="GNSS fixes")
+    ax[2].set_xlim(-20, 20)
+    ax[2].set_ylim(-36, 4)
+    ax[2].set_xlabel("east [m]")
+    ax[2].set_ylabel("north [m]")
+    ax[2].set_title("recorded run: odometry + GNSS")
+    ax[2].legend(fontsize=7, loc="upper left")
+    save(fig, "06_fusion.png")
+
+
+CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4, 5: chapter5, 6: chapter6}
 
 if __name__ == "__main__":
     wanted = [int(a) for a in sys.argv[1:]] or sorted(CHAPTERS)
