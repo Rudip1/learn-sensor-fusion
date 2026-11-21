@@ -299,7 +299,63 @@ def plt_polar(s, title):
     return fig
 
 
-CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3}
+def demo_scan(noise: float = 0.02, seed: int = 1):
+    """The 32-beam scan of chapter 4: sensor 1.8 m above the ground in the demo parking lot."""
+    from sensor_fusion import sim
+
+    T = np.eye(4)
+    T[:3, 3] = [0.0, 0.0, 1.8]
+    model = sim.LidarModel.spinning(32, -25.0, 10.0, 1024)
+    model.range_noise = noise
+    return sim.simulate_lidar(sim.demo_scene(), T, model, seed=seed)
+
+
+def chapter4() -> None:
+    from sensor_fusion import cloud
+
+    print("chapter 4")
+    scan = demo_scan()
+    P, labels, true_n = scan["points"], scan["labels"], scan["normals"]
+    print(f"  simulated scan: {len(P)} points, ground {np.mean(labels == -1):.2f}")
+    fig, ax = figure(1, 3, width=13.5, height=4.0)
+    # (a) the scan from above, ground grey, objects coloured by id
+    g = labels == -1
+    ax[0].scatter(P[g, 0], P[g, 1], s=0.2, color="0.75")
+    ax[0].scatter(P[~g, 0], P[~g, 1], s=0.3, c=labels[~g] % 8, cmap="tab10")
+    ax[0].set_aspect("equal")
+    ax[0].set_xlim(-35, 35)
+    ax[0].set_ylim(-25, 25)
+    ax[0].set_title(f"simulated 32-beam scan ({len(P)} points)")
+    ax[0].set_xlabel("x [m]")
+    ax[0].set_ylabel("y [m]")
+    # (b) voxel grid: points kept against the leaf size
+    leaves = np.array([0.05, 0.1, 0.2, 0.3, 0.5, 0.75, 1.0, 1.5, 2.0])
+    kept = [len(cloud.voxel_downsample(P, leaf)[0]) for leaf in leaves]
+    for leaf, k in zip(leaves, kept):
+        if leaf in (0.1, 0.5, 1.0):
+            print(f"  voxel leaf {leaf} m: {k} points ({k / len(P):.2f})")
+    ax[1].loglog(leaves, kept, "o-")
+    ax[1].axhline(len(P), color="0.5", ls="--", lw=1)
+    ax[1].set_xlabel("voxel edge [m]")
+    ax[1].set_ylabel("points kept")
+    ax[1].set_title("voxel-grid downsampling")
+    # (c) normal error against the number of neighbours, 2 cm range noise
+    for i, k in enumerate((5, 10, 20, 40)):
+        n = cloud.estimate_normals(P, k, np.zeros(3))[0]
+        ang = np.degrees(np.arccos(np.clip(np.abs(np.sum(n * true_n, axis=1)), 0, 1)))
+        print(f"  normals k = {k}: median error {np.median(ang):.2f} deg, > 10 deg: {np.mean(ang > 10):.2f}")
+        x = np.sort(ang)
+        ax[2].plot(x, np.arange(1, len(x) + 1) / len(x), color=SERIES[i], label=f"k = {k}")
+    ax[2].set_xscale("log")
+    ax[2].set_xlim(0.05, 90)
+    ax[2].set_xlabel("angle to the true normal [deg]")
+    ax[2].set_ylabel("fraction of points")
+    ax[2].set_title("PCA normals, 2 cm range noise")
+    ax[2].legend()
+    save(fig, "04_point_clouds.png")
+
+
+CHAPTERS = {1: chapter1, 2: chapter2, 3: chapter3, 4: chapter4}
 
 if __name__ == "__main__":
     wanted = [int(a) for a in sys.argv[1:]] or sorted(CHAPTERS)
